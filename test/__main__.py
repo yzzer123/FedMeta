@@ -2,3 +2,5 @@
 import logging
 
 from test.train_test import main
+
+main()

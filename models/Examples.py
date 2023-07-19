@@ -1,12 +1,13 @@
 
 from models import BasicModel, LocalEnvironment
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, Subset
 from typing import Tuple 
 from torchvision import datasets,transforms
 import torch
 import torch.nn.functional as F
 from torch import nn
 import logging
+from models.BasicModel import LocalEnvironment
 from utils import Properties
 import os
 
@@ -138,8 +139,8 @@ class BasicBlock(nn.Module):
 
 class ResNetCIFAR10(BasicModel):
     
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, env: LocalEnvironment, local_num_epoch=5) -> None:
+        super().__init__(env, local_num_epoch=local_num_epoch)
         
         #设置第一层的输入通道数
         self.in_planes = 64
@@ -160,6 +161,9 @@ class ResNetCIFAR10(BasicModel):
         #定义全连接层，输入512*block.expansion个神经元，输出10个分类神经元
         self.linear = nn.Linear(512*block.expansion, num_classes)
         #定义创造层的函数，在同一层中通道数相同，输入参数为残差块，通道数，残差块数量，步长
+
+        self.to(env.device)
+
     def _make_layer(self, block, planes, num_blocks, stride):
         #strides列表第一个元素stride表示第一个残差块第一个卷积步长，其余元素表示其他残差块第一个卷积步长为1
         strides = [stride] + [1]*(num_blocks-1)
@@ -186,9 +190,8 @@ class ResNetCIFAR10(BasicModel):
     def client_init(self, env: LocalEnvironment):
         super().client_init(env)
         env.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.to(env.device)
         logger.info("client inited")
-        
-        
         
         
     def get_dataloader(self) -> Tuple[DataLoader]:
@@ -209,7 +212,7 @@ class ResNetCIFAR10(BasicModel):
         ])
 
         train_dataset = datasets.CIFAR10("./datasets/cifar10", train=True, download=True, transform=transform_train)
-        eval_dataset = datasets.CIFAR10("/datasets/cifar10", train=False, transform=transform_test)
+        eval_dataset = datasets.CIFAR10("./datasets/cifar10", train=False, transform=transform_test)
         
         if "FL_SLICE_INDEX" in os.environ:
             index, step = os.environ["FL_SLICE_INDEX"].split(":")
@@ -245,6 +248,10 @@ class ResNetCIFAR10(BasicModel):
             logger.info('epoch %d, loss %.5f' % (epoch + 1, train_l_sum / batch_count))
             self.data_size += data_size
 
+
+    def inner_loop(self, env: LocalEnvironment) -> int:
+        return super().inner_loop(env)
+
         
     
     def test(self, env: LocalEnvironment):
@@ -261,6 +268,9 @@ class ResNetCIFAR10(BasicModel):
                 acc_sum += (self(X.to(env.device)).argmax(dim=1) == y.to(env.device)).float().sum().cpu().item()
                 n += y.shape[0] #每一次y.shape[0]表示一批量中标签个数，也就是样本个数。所以n表示累计的所有预测过的样本个数，无论正确与否
         logger.info('accracy = %.5f' % (acc_sum / n))
+        if env.writer is not None:
+            env.writer.add_scalar('Accuracy', acc_sum / n, env.global_epoch)
+            env.global_epoch += 1
         return acc_sum / n #用累计的所有预测正确的样本个数除以累计的所有预测过的样本个数得到准确率
 
 

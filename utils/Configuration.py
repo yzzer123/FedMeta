@@ -25,16 +25,7 @@ class Properties:
         Properties.logger = logging.getLogger(str(Properties.__class__))
         # 如果配置文件还没加载，就从文件中读取配置
         Properties.logger.info("read config from conf.properties")
-        try:
-            with open("../conf/conf.properties", "r", encoding="utf-8") as conf_file:
-                Properties._conf = {}
-                for line in conf_file:
-                    if line.find('=') > 0:
-                        key_value = line.replace('\n', '').split('=')
-                        Properties._conf[key_value[0]] = key_value[1]
-        except Exception:
-            Properties.logger("the config file doesn't exist")
-            exit()
+
 
     @classmethod
     def getLogger(cls, name):

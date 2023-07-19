@@ -3,22 +3,32 @@ from torch.utils.data import Dataset, DataLoader
 from abc import abstractmethod
 import torch
 from typing import Tuple, List, OrderedDict
+from torch.utils.tensorboard import SummaryWriter
 
 
 class LocalEnvironment(object):
     
-    def __init__(self) -> None:
-        self.train_loader, self.test_loader = None, None
+    def __init__(self, board_name: str="", loaders: Tuple[DataLoader] = None) -> None:
+        if loaders is None:
+            self.train_loader, self.test_loader = None, None
+        else:
+            self.train_loader, self.test_loader = loaders
         self.device = None
+        self.global_epoch = 0
+        if board_name != "":
+            self.writer: SummaryWriter = SummaryWriter(board_name)
 
+        
 
 class BasicModel(nn.Module):
     
-    def __init__(self, local_num_epoch=5) -> None:
+    def __init__(self, env: LocalEnvironment,  local_num_epoch=5) -> None:
         super().__init__()
         # 初始化时放置全局超参
         self.local_num_epoch = local_num_epoch
         self.data_size = 0        
+        self.env = env
+        self.client_init(env)
         
     def merge(self, models: List[Tuple[OrderedDict, int]], total_data_size: int, env: LocalEnvironment) -> nn.Module:
         """
@@ -48,9 +58,13 @@ class BasicModel(nn.Module):
         """
             完成第一次的模型初始化, 在这里可以定制每台机器上的
         """
-        env.train_loader, env.test_loader = self.get_dataloader()
-        env.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        if env.train_loader is None:
+            env.train_loader, env.test_loader = self.get_dataloader()
+        
+        if env.device is None:
+            env.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+        
         
     @abstractmethod
     def get_dataloader(self) -> Tuple[DataLoader]:
@@ -59,6 +73,13 @@ class BasicModel(nn.Module):
     
     @abstractmethod
     def local_train(self, env: LocalEnvironment) -> int:
+        """
+            本地训练，需要返回参与训练的数据集大小
+        """
+        return 0
+    
+    @abstractmethod
+    def inner_loop(self, env: LocalEnvironment) -> int:
         """
             本地训练，需要返回参与训练的数据集大小
         """
